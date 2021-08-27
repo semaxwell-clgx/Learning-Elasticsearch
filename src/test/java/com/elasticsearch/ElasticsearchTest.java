@@ -1,6 +1,10 @@
 package com.elasticsearch;
 
+import com.elasticsearch.domain.courses.Course;
+import com.elasticsearch.domain.driver.DriverContainer;
+import com.elasticsearch.domain.groups.Group;
 import org.apache.lucene.search.join.ScoreMode;
+import org.assertj.core.api.SoftAssertions;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
@@ -11,14 +15,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.*;
 
 @SpringBootTest
 public class ElasticsearchTest {
 
     @Autowired
     RestHighLevelClient client;
-
 
     /*
      * 3.a
@@ -32,8 +38,10 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(10l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        assertThat(courses).hasSize(10);
     }
 
     /*
@@ -49,8 +57,14 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(9l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        assertThat(courses)
+                .isNotNull()
+                .hasSize(9)
+                .extracting(Course::getName)
+                .doesNotContain("Theatre 410");
     }
 
     /*
@@ -65,8 +79,14 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(2l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        assertThat(courses)
+                .isNotNull()
+                .hasSize(2)
+                .extracting(Course::getName)
+                .containsExactlyInAnyOrder("Computer Science 101", "Computer Internals 250");
     }
 
     /*
@@ -84,8 +104,18 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(1l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+
+        assertThat(courses)
+                .as("Verify is not null")
+                .isNotNull()
+                .as("Verify size is 1")
+                .hasSize(1)
+                .extracting(Course::getName)
+                .as("Verify class name is 'Computer Internals 250'")
+                .contains("Computer Internals 250");
     }
 
     /*
@@ -106,8 +136,20 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(4l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        SoftAssertions softly = new SoftAssertions(); // try out soft assertions
+        softly.assertThat(courses)
+                .isNotNull()
+                .hasSize(4)
+                .extracting("name", "room", "professor.name")
+                .contains(
+                        tuple("Computer Science 101", "C12", "Gregg Payne"),
+                        tuple("Computer Internals 250", "C8", "Gregg Payne"),
+                        tuple("Accounting 101", "E3", "Thomas Baszo"),
+                        tuple("Accounting Info Systems 350", "E3", "Bill Cage"));
+        softly.assertAll();
     }
 
     /*
@@ -122,8 +164,19 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(4l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        assertThat(courses)
+                .isNotNull()
+                .hasSize(4)
+                .extracting(Course::getName)
+                .containsExactlyInAnyOrder(
+                        "Cost Accounting 400",
+                        "Accounting Info Systems 350",
+                        "Accounting 101",
+                        "Tax Accounting 200"
+                );
     }
 
     /*
@@ -138,8 +191,14 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(1l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        assertThat(courses)
+                .isNotNull()
+                .hasSize(1)
+                .extracting("name", "room", "professor.name")
+                .contains(tuple("Cost Accounting 400", "E7", "Bill Cage"));
     }
 
     /*
@@ -154,8 +213,14 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(1l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        assertThat(courses)
+                .isNotNull()
+                .hasSize(1)
+                .extracting("name", "room", "professor.name")
+                .contains(tuple("Cost Accounting 400", "E7", "Bill Cage"));
     }
 
     /*
@@ -170,8 +235,15 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(6l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        assertThat(courses)
+                .isNotNull()
+                .hasSize(6)
+                .extracting(Course::getStudentsEnrolled)
+                .contains(27l, 18l, 22l, 19l, 17l, 13l)
+                .doesNotContain(33l, 47l, 31l, 33l);
     }
 
     /*
@@ -191,8 +263,14 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(1l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+        assertThat(courses)
+                .isNotNull()
+                .hasSize(1)
+                .extracting("name", "room", "professor.name")
+                .contains(tuple("Accounting Info Systems 350", "E3", "Bill Cage"));
     }
 
     /*
@@ -212,8 +290,15 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(1l, response.getHits().getTotalHits().value);
+
+        List<Course> courses = TestUtils.extractCourses(response);
+
+        assertThat(courses)
+                .isNotNull()
+                .hasSize(1)
+                .extracting("name", "room", "professor.name")
+                .contains(tuple("Accounting Info Systems 350", "E3", "Bill Cage"));
     }
 
     /*
@@ -234,8 +319,16 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(1l, response.getHits().getTotalHits().value);
+
+        List<Group> groups = TestUtils.extractGroups(response);
+        SoftAssertions softly = new SoftAssertions();
+        softly.assertThat(groups)
+                .isNotNull()
+                .hasSize(1)
+                .extracting(Group::getGroup)
+                .contains("fans");
+        softly.assertAll();
     }
 
     /*
@@ -260,7 +353,15 @@ public class ElasticsearchTest {
         searchRequest.source(searchSourceBuilder);
 
         SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
-
         assertEquals(1l, response.getHits().getTotalHits().value);
+
+        List<DriverContainer> drivers = TestUtils.extractDrivers(response);
+        SoftAssertions softly = new SoftAssertions();
+        softly.assertThat(drivers)
+                .isNotNull()
+                .hasSize(1)
+                .extracting("driver.lastName")
+                .contains("McQueen");
+        softly.assertAll();
     }
 }
