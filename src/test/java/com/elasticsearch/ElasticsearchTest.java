@@ -10,12 +10,20 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.bucket.terms.ParsedStringTerms;
+import org.elasticsearch.search.aggregations.metrics.*;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.sort.SortBuilders;
+import org.elasticsearch.search.sort.SortOrder;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.assertj.core.api.Assertions.*;
@@ -363,5 +371,209 @@ public class ElasticsearchTest {
                 .extracting("driver.lastName")
                 .contains("McQueen");
         softly.assertAll();
+    }
+
+    /*
+     * 6.a
+     */
+    @Test
+    public void given16Vehicles_whenPaginatedRequestIsMade_5VehiclesAreReturned() throws Exception {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.query(QueryBuilders.matchAllQuery())
+                .from(0)
+                .size(5)
+                .sort(SortBuilders.fieldSort("price").order(SortOrder.DESC));
+
+        SearchRequest searchRequest = new SearchRequest("vehicles");
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
+
+        assertEquals(5l, response.getHits().getHits().length);
+    }
+
+    /*
+     * 6.b
+     */
+    @Test
+    public void given16Vehicles_whenGettingCountOfToyotas_then2AreReturned() throws Exception {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.query(QueryBuilders.matchQuery("make", "toyota"))
+                .size(0);
+
+        SearchRequest searchRequest = new SearchRequest("vehicles");
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
+
+        assertEquals(2l, response.getHits().getTotalHits().value);
+    }
+
+    /*
+     * 6.c
+     */
+    @Test
+    public void given16Vehicles_whenGettingCountOfCarsByMake_then6BucketsAreReturned() throws Exception {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.aggregation(
+                AggregationBuilders.terms("popular_cars").field("make.keyword")
+        );
+
+        SearchRequest searchRequest = new SearchRequest("vehicles");
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
+        var buckets = ((ParsedStringTerms) response.getAggregations().get("popular_cars")).getBuckets();
+
+        assertEquals(6l, buckets.size());
+    }
+
+    /*
+     * 6.d
+     */
+    @Test
+    public void given16Vehicles_whenRequestingMinMaxAve_givenBucketsAreReturned() throws Exception {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.aggregation(
+                AggregationBuilders.terms("popular_cars").field("make.keyword")
+                        .subAggregation(AggregationBuilders.avg("avg_price").field("price"))
+                        .subAggregation(AggregationBuilders.max("max_price").field("price"))
+                        .subAggregation(AggregationBuilders.min("min_price").field("price"))
+        );
+
+        SearchRequest searchRequest = new SearchRequest("vehicles");
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
+        var buckets = (((ParsedStringTerms) response.getAggregations().get("popular_cars")).getBuckets())
+                .stream()
+                .collect(Collectors.toMap(k->k.getKeyAsString(), k->k.getDocCount(), (k,v) -> k));
+
+        assertAll("should be dodge=5,chevrolet=3,bmw=2,ford=2,honda=2,toyota=2",
+                () -> assertEquals(6, buckets.size()),
+                () -> assertEquals(true, buckets.containsKey("dodge")),
+                () -> assertEquals(true, buckets.containsKey("chevrolet")),
+                () -> assertEquals(true, buckets.containsKey("bmw")),
+                () -> assertEquals(true, buckets.containsKey("ford")),
+                () -> assertEquals(true, buckets.containsKey("honda")),
+                () -> assertEquals(true, buckets.containsKey("toyota")),
+                () -> assertEquals(5, buckets.get("dodge")),
+                () -> assertEquals(3, buckets.get("chevrolet")),
+                () -> assertEquals(2, buckets.get("bmw")),
+                () -> assertEquals(2, buckets.get("ford")),
+                () -> assertEquals(2, buckets.get("honda")),
+                () -> assertEquals(2, buckets.get("toyota")));
+    }
+
+    /*
+     * 6.e
+     */
+    @Test
+    public void sameAs6dWithNoHitsAndRedCarsOnly() throws Exception {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder
+                .query(QueryBuilders.matchQuery("color", "red"))
+                .aggregation(
+                        AggregationBuilders.terms("popular_cars").field("make.keyword")
+                                .subAggregation(AggregationBuilders.avg("avg_price").field("price"))
+                                .subAggregation(AggregationBuilders.max("max_price").field("price"))
+                                .subAggregation(AggregationBuilders.min("min_price").field("price")) )
+                .size(0);
+
+        SearchRequest searchRequest = new SearchRequest("vehicles");
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
+        var buckets = (((ParsedStringTerms) response.getAggregations().get("popular_cars")).getBuckets())
+                .stream()
+                .collect(Collectors.toMap(k->k.getKeyAsString(), k->k, (k,v) -> k));
+
+        assertAll("should be dodge=3,chevrolet=1,bmw=1",
+                () -> assertEquals(3, buckets.size()),
+
+                () -> assertTrue(buckets.containsKey("dodge")),
+                () -> assertEquals(3, buckets.get("dodge").getDocCount(), "Three dodges"),
+                () -> assertEquals(35_000.0, ((ParsedMax) buckets.get("dodge").getAggregations().asMap().get("max_price")).getValue()),
+                () -> assertEquals(24_000.0, ((ParsedAvg) buckets.get("dodge").getAggregations().asMap().get("avg_price")).getValue()),
+                () -> assertEquals(18_000.0, ((ParsedMin) buckets.get("dodge").getAggregations().asMap().get("min_price")).getValue()),
+
+                () -> assertTrue(buckets.containsKey("chevrolet")),
+                () -> assertEquals(1, buckets.get("chevrolet").getDocCount(), "Three chevrolets"),
+                () -> assertEquals(20_000.0, ((ParsedMax) buckets.get("chevrolet").getAggregations().asMap().get("max_price")).getValue()),
+                () -> assertEquals(20_000.0, ((ParsedAvg) buckets.get("chevrolet").getAggregations().asMap().get("avg_price")).getValue()),
+                () -> assertEquals(20_000.0, ((ParsedMin) buckets.get("chevrolet").getAggregations().asMap().get("min_price")).getValue()),
+
+                () -> assertTrue(buckets.containsKey("bmw")),
+                () -> assertEquals(1, buckets.get("bmw").getDocCount(), "Three bmws"),
+                () -> assertEquals(80_000.0, ((ParsedMax) buckets.get("bmw").getAggregations().asMap().get("max_price")).getValue()),
+                () -> assertEquals(80_000.0, ((ParsedAvg) buckets.get("bmw").getAggregations().asMap().get("avg_price")).getValue()),
+                () -> assertEquals(80_000.0, ((ParsedMin) buckets.get("bmw").getAggregations().asMap().get("min_price")).getValue())
+        );
+    }
+
+    /*
+     * 6.c
+     */
+    @Test
+    public void useStatsFunctionToGetMinMaxAvgSum() throws Exception {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.aggregation(
+                AggregationBuilders.terms("popular_cars").field("make.keyword")
+                        .subAggregation(AggregationBuilders.stats("stats_on_price").field("price"))
+        );
+
+        SearchRequest searchRequest = new SearchRequest("vehicles");
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
+        var buckets = (((ParsedStringTerms) response.getAggregations().get("popular_cars")).getBuckets())
+                .stream()
+                .collect(Collectors.toMap(k->k.getKeyAsString(), k->k, (k,v) -> k));
+
+        assertAll("should be dodge=5,chevrolet=3,bmw=2,ford=2,honda=2,toyota=2",
+                () -> assertEquals(6, buckets.size()),
+
+                () -> assertTrue(buckets.containsKey("dodge")),
+                () -> assertEquals(5, buckets.get("dodge").getDocCount(), "Five dodges"),
+                () -> assertEquals(35_000.0, ((ParsedStats) buckets.get("dodge").getAggregations().asList().get(0)).getMax()),
+                () -> assertEquals(18_900.0, ((ParsedStats) buckets.get("dodge").getAggregations().asList().get(0)).getAvg()),
+                () -> assertEquals(10_000.0, ((ParsedStats) buckets.get("dodge").getAggregations().asList().get(0)).getMin()),
+                () -> assertEquals(94_500.0, ((ParsedStats) buckets.get("dodge").getAggregations().asList().get(0)).getSum()),
+
+                () -> assertTrue(buckets.containsKey("chevrolet")),
+                () -> assertEquals(3, buckets.get("chevrolet").getDocCount(), "Five chevrolets"),
+                () -> assertEquals(28_000.0, ((ParsedStats) buckets.get("chevrolet").getAggregations().asList().get(0)).getMax()),
+                () -> assertEquals(20_333.333333333332, ((ParsedStats) buckets.get("chevrolet").getAggregations().asList().get(0)).getAvg()),
+                () -> assertEquals(13_000.0, ((ParsedStats) buckets.get("chevrolet").getAggregations().asList().get(0)).getMin()),
+                () -> assertEquals(61_000.0, ((ParsedStats) buckets.get("chevrolet").getAggregations().asList().get(0)).getSum()),
+
+                () -> assertTrue(buckets.containsKey("bmw")),
+                () -> assertEquals(2, buckets.get("bmw").getDocCount(), "Five bmws"),
+                () -> assertEquals(80_000.0, ((ParsedStats) buckets.get("bmw").getAggregations().asList().get(0)).getMax()),
+                () -> assertEquals(55_000.0, ((ParsedStats) buckets.get("bmw").getAggregations().asList().get(0)).getAvg()),
+                () -> assertEquals(30_000.0, ((ParsedStats) buckets.get("bmw").getAggregations().asList().get(0)).getMin()),
+                () -> assertEquals(110_000.0, ((ParsedStats) buckets.get("bmw").getAggregations().asList().get(0)).getSum()),
+
+                () -> assertTrue(buckets.containsKey("ford")),
+                () -> assertEquals(2, buckets.get("ford").getDocCount(), "Five ford"),
+                () -> assertEquals(30_000.0, ((ParsedStats) buckets.get("ford").getAggregations().asList().get(0)).getMax()),
+                () -> assertEquals(27_500.0, ((ParsedStats) buckets.get("ford").getAggregations().asList().get(0)).getAvg()),
+                () -> assertEquals(25_000.0, ((ParsedStats) buckets.get("ford").getAggregations().asList().get(0)).getMin()),
+                () -> assertEquals(55_000.0, ((ParsedStats) buckets.get("ford").getAggregations().asList().get(0)).getSum()),
+
+                () -> assertTrue(buckets.containsKey("honda")),
+                () -> assertEquals(2, buckets.get("honda").getDocCount(), "Five hondas"),
+                () -> assertEquals(20_000.0, ((ParsedStats) buckets.get("honda").getAggregations().asList().get(0)).getMax()),
+                () -> assertEquals(15_000.0, ((ParsedStats) buckets.get("honda").getAggregations().asList().get(0)).getAvg()),
+                () -> assertEquals(10_000.0, ((ParsedStats) buckets.get("honda").getAggregations().asList().get(0)).getMin()),
+                () -> assertEquals(30_000.0, ((ParsedStats) buckets.get("honda").getAggregations().asList().get(0)).getSum()),
+
+                () -> assertTrue(buckets.containsKey("toyota")),
+                () -> assertEquals(2, buckets.get("toyota").getDocCount(), "Five toyotas"),
+                () -> assertEquals(15_000.0, ((ParsedStats) buckets.get("toyota").getAggregations().asList().get(0)).getMax()),
+                () -> assertEquals(13_500.0, ((ParsedStats) buckets.get("toyota").getAggregations().asList().get(0)).getAvg()),
+                () -> assertEquals(12_000.0, ((ParsedStats) buckets.get("toyota").getAggregations().asList().get(0)).getMin()),
+                () -> assertEquals(27_000.0, ((ParsedStats) buckets.get("toyota").getAggregations().asList().get(0)).getSum())
+        );
     }
 }

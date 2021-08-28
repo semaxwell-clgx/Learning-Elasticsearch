@@ -1,9 +1,9 @@
 # Querying Elasticsearch with Java
-This code repo is supplemental to the Udemy course [Complete Elasticsearch Masterclass with Logstash and Kibana](https://cognizant.udemy.com/course/complete-elasticsearch-masterclass-with-kibana-and-logstash). 
+This code repo is supplemental to the Udemy course [Complete Elasticsearch Masterclass with Logstash and Kibana](https://cognizant.udemy.com/course/complete-elasticsearch-masterclass-with-kibana-and-logstash).
 
-While the Udemy course does a good job of introducing Elasticsearch/kibana querying, the focus of this repo is on learning how to implement those queries in Java. Some knowledge of Elasticsearch queries is expected. 
+While the Udemy course does a good job of introducing Elasticsearch/kibana querying, the focus of this repo is on learning how to implement those queries in Java. Some knowledge of Elasticsearch queries is expected.
 
-There are some additional queries not covered in the course, particularly around nested objects. 
+There are some additional queries not covered in the course, particularly around nested objects.
 
 ## Step 1: Setup Local Elasticsearch & Kibana
 
@@ -21,8 +21,10 @@ There are some additional queries not covered in the course, particularly around
     docker rm es01-test
     docker rm kib01-test
 
-## Step 2: Populate the (implicit) index with data
+You should now be able to access Kibana at localhost:5601
 
+## Step 2: Populate the (implicit) index with data
+Note: if desired, you can use _src.test.java.com.elasticsearch.DataLoader_ to avoid loading data manually.
 ```json
 PUT /courses/_doc/1
 {
@@ -187,9 +189,9 @@ There are two ways to create queries:
 See the [Elasticsearch Building Queries](https://www.elastic.co/guide/en/elasticsearch/client/java-rest/master/java-rest-high-query-builders.html) documentation for specifics.
 
 
-With this in mind, implement the following queries in Java code. 
+With this in mind, implement the following queries in Java code. Open src/test/java/com/elasticsearch/ElasticTest.java and implement the following queries:
 
-_HINT: You can run the queries in Kibana to see the results you can expect to be returned._
+_HINT: You can run the queries in Elasticsearch to see the results you can expect to be returned._
 
 _HINT: You can sysout the SearchSourceBuilder instance to view the Elasticsearch query_
 
@@ -445,7 +447,7 @@ GET my-users/_search
 ```
 
 
-## 2) Nested nested queries
+### Nested nested queries
 #### Create the 'Drivers' index
 ```json
 PUT /drivers
@@ -493,8 +495,6 @@ PUT /drivers/_doc/1
     ]
   }
 }
-```
-```json
 PUT /drivers/_doc/2
 {
   "driver":{
@@ -545,6 +545,179 @@ GET /drivers/_search
 }
 ```
 
+### Step 6: Pagination, aggregations, and other miscellanea
+
+#### Create the index 'vehicles' and add bulk data
+```json
+POST /vehicles/_bulk
+{ "index": {}}
+{ "price" : 10000, "color" : "white", "make" : "honda", "sold" : "2016-10-28", "condition": "okay"}
+{ "index": {}}
+{ "price" : 20000, "color" : "white", "make" : "honda", "sold" : "2016-11-05", "condition": "new" }
+{ "index": {}}
+{ "price" : 30000, "color" : "green", "make" : "ford", "sold" : "2016-05-18", "condition": "new" }
+{ "index": {}}
+{ "price" : 15000, "color" : "blue", "make" : "toyota", "sold" : "2016-07-02", "condition": "good" }
+{ "index": {}}
+{ "price" : 12000, "color" : "green", "make" : "toyota", "sold" : "2016-08-19" , "condition": "good"}
+{ "index": {}}
+{ "price" : 18000, "color" : "red", "make" : "dodge", "sold" : "2016-11-05", "condition": "good"  }
+{ "index": {}}
+{ "price" : 80000, "color" : "red", "make" : "bmw", "sold" : "2016-01-01", "condition": "new"  }
+{ "index": {}}
+{ "price" : 25000, "color" : "blue", "make" : "ford", "sold" : "2016-08-22", "condition": "new"  }
+{ "index": {}}
+{ "price" : 10000, "color" : "gray", "make" : "dodge", "sold" : "2016-02-12", "condition": "okay" }
+{ "index": {}}
+{ "price" : 19000, "color" : "red", "make" : "dodge", "sold" : "2016-02-12", "condition": "good" }
+{ "index": {}}
+{ "price" : 20000, "color" : "red", "make" : "chevrolet", "sold" : "2016-08-15", "condition": "good" }
+{ "index": {}}
+{ "price" : 13000, "color" : "gray", "make" : "chevrolet", "sold" : "2016-11-20", "condition": "okay" }
+{ "index": {}}
+{ "price" : 12500, "color" : "gray", "make" : "dodge", "sold" : "2016-03-09", "condition": "okay" }
+{ "index": {}}
+{ "price" : 35000, "color" : "red", "make" : "dodge", "sold" : "2016-04-10", "condition": "new" }
+{ "index": {}}
+{ "price" : 28000, "color" : "blue", "make" : "chevrolet", "sold" : "2016-08-15", "condition": "new" }
+{ "index": {}}
+{ "price" : 30000, "color" : "gray", "make" : "bmw", "sold" : "2016-11-20", "condition": "good" }
+```
 
 
+#### 6.a Learning Goal: pagination
+Description: grab the first 5 vehicles, sorted by price descending. Note: pagination doesn't affect the hits
+```json
+GET /vehicles/_search
+{
+  "from": 0,
+  "size": 5,
+  "query": {
+    "match_all": {}
+  },
+  "sort": [
+    {"price": {"order": "desc"}}
+  ]
+}
+```
+
+#### 6.b Learning Goal: count
+Description: count the number of cars with make=model
+```json
+GET /vehicles/_count
+{
+  "query": {
+    "match": {
+      "make": "toyota"
+    }
+  }
+}
+```
+
+#### 6.c Learning Goal: aggregation
+Description: acquire the total count of cars per make
+```json
+GET /vehicles/_search
+{
+  "aggs": {
+    "popular_cars": {
+      "terms": {
+        "field": "make.keyword"
+      }
+    }
+  }
+}
+```
+
+#### 6.d Learning Goal: aggregation by numeric field
+Description: Get average, max, min price per manufacturer. Don't need to use '.keyword' because it's a numeric field
+```json
+GET /vehicles/_search
+{
+  "aggs": {
+    "popular_cars": {
+      "terms": {
+        "field": "make.keyword"
+      },
+      "aggs": {
+        "avg_price": {
+          "avg": {
+            "field": "price"
+          }
+        },
+        "max_price": {
+          "max": {
+            "field": "price"
+          }
+        },
+        "min_price": {
+          "min": {
+            "field": "price"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### 6.e Learning Goal: putting it all together
+Description: Narrow the scope of the previous query by adding a query requiring color to be red. Optionally, add '"size": 0' to limit the hits (but not the aggregations)
+```json
+GET /vehicles/_search
+{
+  "size": 0,
+  "query": {
+    "match": {
+      "color": "red"
+    }
+  },
+  "aggs": {
+    "popular_cars": {
+      "terms": {
+        "field": "make.keyword"
+      },
+      "aggs": {
+        "avg_price": {
+          "avg": {
+            "field": "price"
+          }
+        },
+        "max_price": {
+          "max": {
+            "field": "price"
+          }
+        },
+        "min_price": {
+          "min": {
+            "field": "price"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### 6.f Learning Goal: stats
+Description: use 'stats' to get min/max/avg/sum
+```json
+GET /vehicles/_search
+{
+  "aggs": {
+    "popular_cars": {
+      "terms": {
+        "field": "make.keyword"
+      },
+      "aggs": {
+        "stats_on_price": {
+          "stats": {
+            "field": "price"
+          }
+        }
+      }
+    }
+  }
+}
+```
 
