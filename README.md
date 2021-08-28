@@ -189,7 +189,7 @@ There are two ways to create queries:
 See the [Elasticsearch Building Queries](https://www.elastic.co/guide/en/elasticsearch/client/java-rest/master/java-rest-high-query-builders.html) documentation for specifics.
 
 
-With this in mind, implement the following queries in Java code. Open src/test/java/com/elasticsearch/ElasticTest.java and implement the following queries:
+With this in mind, implement the following queries in Java code. Open _src/test/java/com/elasticsearch/ElasticsearchTest.java_ and implement the following queries.
 
 _HINT: You can run the queries in Elasticsearch to see the results you can expect to be returned._
 
