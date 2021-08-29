@@ -721,3 +721,13 @@ GET /vehicles/_search
 }
 ```
 
+### 6.f Learning Goal: wrappedQuery
+Description: perform the following search by passing a json string to the query builder
+```json
+GET /courses/_search
+{
+  "query":{
+    "match_all": {}
+  }
+}
+```

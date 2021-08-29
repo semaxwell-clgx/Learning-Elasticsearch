@@ -576,4 +576,17 @@ public class ElasticsearchTest {
                 () -> assertEquals(27_000.0, ((ParsedStats) buckets.get("toyota").getAggregations().asList().get(0)).getSum())
         );
     }
+
+    @Test
+    public void submitJsonString() throws Exception {
+        String queryString = "{ \"match_all\": {} }";
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.query(QueryBuilders.wrapperQuery(queryString));
+
+        SearchRequest searchRequest = new SearchRequest("courses");
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
+        assertEquals(10l, searchResponse.getHits().getTotalHits().value);
+    }
 }
